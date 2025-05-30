@@ -1,102 +1,172 @@
 # Warung-Koe
-const express = require('express');
-const mongoose = require('mongoose');
-const dotenv = require('dotenv');
-const cors = require('cors');
+// Struktur file:
+// - index.html
+// - style.css
+// - script.js
 
-dotenv.config();
-const app = express();
+// index.html
+const html = `
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Toko Online Sederhana</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Toko Online Sederhana</h1>
 
-const adminRoutes = require('./routes/admin');
-const paymentRoutes = require('./routes/payment');
+  <section id="login-section">
+    <h2>Login Admin</h2>
+    <form onsubmit="login(event)">
+      <input type="text" id="admin-user" placeholder="Username" required>
+      <input type="password" id="admin-pass" placeholder="Password" required>
+      <button type="submit">Login</button>
+    </form>
+  </section>
 
-app.use(cors());
-app.use(express.json());
+  <section id="catalog">
+    <h2>Katalog Produk</h2>
+    <div id="product-list"></div>
+  </section>
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch((err) => console.error(err));
+  <section id="cart">
+    <h2>Keranjang Belanja</h2>
+    <ul id="cart-items"></ul>
+    <p>Total: <span id="total">Rp0</span></p>
+    <button onclick="checkout()">Checkout</button>
+  </section>
 
-app.use('/api/admin', adminRoutes);
-app.use('/api/payment', paymentRoutes);
+  <section id="admin-dashboard" style="display:none">
+    <h2>Dashboard Admin</h2>
+    <form onsubmit="addProduct(event)">
+      <input type="text" id="name" placeholder="Nama Produk" required>
+      <input type="number" id="price" placeholder="Harga" required>
+      <button type="submit">Tambah Produk</button>
+    </form>
+  </section>
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  <section id="transaction-history" style="display:none">
+    <h2>Riwayat Transaksi</h2>
+    <ul id="history-list"></ul>
+  </section>
 
-const mongoose = require('mongoose');
-const ProductSchema = new mongoose.Schema({
-  name: String,
-  price: Number,
-});
-module.exports = mongoose.model('Product', ProductSchema);
+  <script src="script.js"></script>
+</body>
+</html>
+`;
 
-const mongoose = require('mongoose');
-const TransactionSchema = new mongoose.Schema({
-  items: Array,
-  total: Number,
-  date: { type: Date, default: Date.now }
-});
-module.exports = mongoose.model('Transaction', TransactionSchema);
+// style.css
+const css = `
+body {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+}
+section {
+  margin-bottom: 30px;
+}
+#product-list > div {
+  border: 1px solid #ccc;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+button {
+  margin-top: 5px;
+}
+`;
 
-const express = require('express');
-const router = express.Router();
-const Product = require('../models/Product');
+// script.js
+const js = `
+let products = [];
+let cart = [];
+let transactions = [];
+const admin = { username: 'admin', password: '1234' };
 
-// Add product
-router.post('/product', async (req, res) => {
-  const { name, price } = req.body;
-  const newProduct = new Product({ name, price });
-  await newProduct.save();
-  res.json(newProduct);
-});
+function renderProducts() {
+  const list = document.getElementById('product-list');
+  list.innerHTML = '';
+  products.forEach((product, index) => {
+    const item = document.createElement('div');
+    item.innerHTML = `
+      <p><strong>${product.name}</strong> - Rp${product.price}</p>
+      <button onclick="addToCart(${index})">Tambah ke Keranjang</button>
+    `;
+    list.appendChild(item);
+  });
+}
 
-// Get all products
-router.get('/product', async (req, res) => {
-  const products = await Product.find();
-  res.json(products);
-});
+function addProduct(e) {
+  e.preventDefault();
+  const name = document.getElementById('name').value;
+  const price = parseInt(document.getElementById('price').value);
+  products.push({ name, price });
+  renderProducts();
+  e.target.reset();
+}
 
-module.exports = router;
+function addToCart(index) {
+  cart.push(products[index]);
+  renderCart();
+}
 
-const express = require('express');
-const router = express.Router();
-const Transaction = require('../models/Transaction');
-const midtransClient = require('midtrans-client');
+function renderCart() {
+  const cartItems = document.getElementById('cart-items');
+  cartItems.innerHTML = '';
+  let total = 0;
+  cart.forEach(item => {
+    const li = document.createElement('li');
+    li.textContent = `${item.name} - Rp${item.price}`;
+    cartItems.appendChild(li);
+    total += item.price;
+  });
+  document.getElementById('total').textContent = 'Rp' + total;
+}
 
-const snap = new midtransClient.Snap({
-  isProduction: false,
-  serverKey: process.env.MIDTRANS_SERVER_KEY,
-});
-
-router.post('/checkout', async (req, res) => {
-  const { items } = req.body;
-  const total = items.reduce((sum, item) => sum + item.price, 0);
-  const orderId = 'ORDER-' + Date.now();
-
-  const parameter = {
-    transaction_details: {
-      order_id: orderId,
-      gross_amount: total
-    },
-    credit_card: { secure: true },
-    customer_details: {
-      first_name: 'Pembeli',
-      email: 'pembeli@example.com'
-    }
-  };
-
-  try {
-    const transaction = await snap.createTransaction(parameter);
-    await new Transaction({ items, total }).save();
-    res.json({ redirect_url: transaction.redirect_url });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+function checkout() {
+  if (cart.length === 0) {
+    alert('Keranjang kosong!');
+    return;
   }
-});
+  const total = cart.reduce((sum, item) => sum + item.price, 0);
+  alert(`Pembayaran berhasil sebesar Rp${total} (Simulasi gateway pembayaran)`);
+  transactions.push({ items: [...cart], total, date: new Date().toLocaleString() });
+  cart = [];
+  renderCart();
+  renderHistory();
+}
 
-router.get('/history', async (req, res) => {
-  const history = await Transaction.find().sort({ date: -1 });
-  res.json(history);
-});
+function renderHistory() {
+  const historyList = document.getElementById('history-list');
+  historyList.innerHTML = '';
+  transactions.forEach((trx, idx) => {
+    const li = document.createElement('li');
+    li.innerHTML = `#${idx + 1} - ${trx.date} - Rp${trx.total}`;
+    historyList.appendChild(li);
+  });
+}
 
-module.exports = router;
+function login(e) {
+  e.preventDefault();
+  const user = document.getElementById('admin-user').value;
+  const pass = document.getElementById('admin-pass').value;
+  if (user === admin.username && pass === admin.password) {
+    alert('Login berhasil');
+    document.getElementById('admin-dashboard').style.display = 'block';
+    document.getElementById('transaction-history').style.display = 'block';
+  } else {
+    alert('Username atau password salah');
+  }
+  e.target.reset();
+}
+
+window.onload = () => {
+  renderProducts();
+};
+`;
+
+export const ecommerceFiles = {
+  'index.html': html,
+  'style.css': css,
+  'script.js': js
+};
